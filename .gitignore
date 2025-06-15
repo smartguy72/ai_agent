@@ -2,3 +2,4 @@ venv
 .env
 calculator
 tests.py
+fucntions/__pycache__
