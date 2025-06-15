@@ -1,9 +1,9 @@
-from functions.get_files_info import get_files_info
+from functions.write_file import write_file
 
 
 if __name__ == "__main__":
-    result1 = print(get_files_info("calculator", "."))
-    result2 = print(get_files_info("calculator", "pkg"))
-    result3 = print(get_files_info("calculator", "/bin"))
-    result4 = print(get_files_info("calculator", "../"))
+    result1 = print(write_file("calculator", "lorem.txt", "wait, this isn't lorem ipsum"))
+    result2 = print(write_file("calculator", "pkg/morelorem.txt", "lorem ipsum dolor sit amet"))
+    result3 = print(write_file("calculator", "/tmp/temp.txt", "this should not be allowed"))
+
     
