@@ -2,4 +2,6 @@ venv
 .env
 calculator
 tests.py
-fucntions/__pycache__
+functions/__pycache__/get_file_content.cpython-312.pyc
+functions/__pycache__/run_python_file.cpython-312.pyc
+functions/__pycache__/write_file.cpython-312.pyc
