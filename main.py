@@ -1,5 +1,7 @@
 import os
+import subprocess
 from dotenv import load_dotenv
+import inspect
 import sys
 from google import genai
 from google.genai import types
@@ -100,14 +102,21 @@ available_functions = types.Tool(
 functions_dict = {"get_files_info": get_files_info, "get_file_content": get_file_content, "run_python_file": run_python_file, "write_file": write_file}
 
 def call_function(function_call_part, verbose=False):
-    if verbose == True:
+    if verbose:
         print(f"Calling function: {function_call_part.name} ({function_call_part.args})")
     else: 
-        print(f" - Calling function: {functino_call_part.name}")
+        print(f" - Calling function: {function_call_part.name}")
+
     if function_call_part.name in functions_dict:
         function_to_call = functions_dict[function_call_part.name]
-        function_call_part.args["working_directory"] = "./calculator"
-        result = function_to_call(**function_call_part.args)
+        args = dict(function_call_part.args)  # Copy to modify if needed
+
+        # Check if working_directory is needed, and insert default if not supplied
+        sig = inspect.signature(function_to_call)
+        if 'working_directory' in sig.parameters and 'working_directory' not in args:
+            args['working_directory'] = "."
+
+        result = function_to_call(**args)
         return types.Content(
             role="tool",
             parts=[
@@ -129,36 +138,47 @@ def call_function(function_call_part, verbose=False):
         )
     
 if len(sys.argv) > 1:
-    response = client.models.generate_content(
-        model='gemini-2.0-flash-001', 
-        contents=messages,
-        config=types.GenerateContentConfig(
-            tools=[available_functions], system_instruction=system_prompt),
-        )
-    prompt_tokens = response.usage_metadata.prompt_token_count
-    response_tokens = response.usage_metadata.candidates_token_count
-    if "--verbose" in sys.argv:
-        print(f"User prompt: {user_prompt}")
-        print(f"Prompt tokens: {prompt_tokens}")
-        print(f"Response tokens: {response_tokens}")
-    if response.function_calls is not None:
-        if len(response.function_calls) > 0:
-            for function in response.function_calls:
-                if "--verbose" in sys.argv:
-                    func_return = call_function(function, verbose=True)
-                    try:
-                        final_response = func_return.parts[0].function_response.response
-                    except (AttributeError, IndexError) as e:
-                        raise RuntimeError(f"Function call result had an unexpected structure: {e}")
-                    print(f"-> {final_response}")
-                else:
-                    func_return = call_function(function)
-                    try:
-                        final_response = func_return.parts[0].function_response.response
-                    except (AttributeError, IndexError) as e:
-                        raise RuntimeError(f"Function call result had an unexpected structure: {e}")
-    else:
-        print(response.text)
+    iteration = 0
+    while iteration < 20:
+        response = client.models.generate_content(
+            model='gemini-2.0-flash-001', 
+            contents=messages,
+            config=types.GenerateContentConfig(
+                tools=[available_functions], system_instruction=system_prompt),
+            )
+        candidate = response.candidates[0]
+        for part in candidate.content.parts:
+            if part.text:
+                print("Agent text:", part.text)
+                messages.append(part)
+            if part.function_call:
+                print("Agent function call:", part.function_call)
+                is_verbose = "--verbose" in sys.argv
+                func_return = call_function(part.function_call)
+                messages.append(func_return)
+                if part.function_call.name == "get_file_content":
+                    message = [
+                        types.Content(role="user", parts=[types.Part(text=user_prompt)]), func_return,
+                    ]
+                    
+                try:
+                    final_response = func_return.parts[0].function_response.response
+                    if is_verbose:
+                        print(f"-> {final_response}")
+                except (AttributeError, IndexError) as e:
+                    raise RuntimeError(f"Function callr esult had an unexpected structure: {e}")
+        calc_output = subprocess.run(['python3', 'calculator/main.py', "3 + 7 * 2"], capture_output=True)
+        calc_output_decoded = calc_output.stdout.decode('utf-8')
+        if calc_output_decoded != "20\n":
+            print(response.text)
+            break
+        iteration += 1
+        prompt_tokens = response.usage_metadata.prompt_token_count
+        response_tokens = response.usage_metadata.candidates_token_count
+        if "--verbose" in sys.argv:
+            print(f"User prompt: {user_prompt}")
+            print(f"Prompt tokens: {prompt_tokens}")
+            print(f"Response tokens: {response_tokens}")
 else:
     print("Error: No response received")
     sys.exit(1)
